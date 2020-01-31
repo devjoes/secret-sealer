@@ -5,8 +5,6 @@ import (
 	"io"
 	"io/ioutil"
 	"os"
-	"path"
-
 	"strings"
 	"testing"
 
@@ -14,7 +12,7 @@ import (
 	kusttest_test "sigs.k8s.io/kustomize/api/testutils/kusttest"
 )
 
-func TestSecretSealer_WithKubeSealInPath(t *testing.T) {
+func TestSecretSealer(t *testing.T) {
 	th := kusttest_test.MakeEnhancedHarness(t).
 		BuildGoPlugin("devjoes", "v1", "SecretSealer")
 	defer th.Reset()
@@ -24,46 +22,8 @@ func TestSecretSealer_WithKubeSealInPath(t *testing.T) {
 		t.Error(err)
 	}
 
-	_, err = copyFile("../kubeseal_bin", path.Join(tmp, "kubeseal"))
-	if err != nil {
-		t.Error(err)
-	}
-
-	origPath := os.Getenv("PATH")
-	os.Setenv("PATH", tmp)
-	defer os.Setenv("PATH", origPath)
-
 	err = runAndAssert(th, "", true, true)
 
-	if err != nil {
-		t.Error(err)
-	}
-}
-
-func TestSecretSealer_WithKubeSealInParent(t *testing.T) {
-	th := kusttest_test.MakeEnhancedHarness(t).
-		BuildGoPlugin("devjoes", "v1", "SecretSealer")
-	defer th.Reset()
-
-	_, err := copyFile("../kubeseal_bin", "../kubeseal")
-	defer os.Remove("../kubeseal")
-	if err != nil {
-		t.Error(err)
-	}
-
-	const envName = "FIND_KUBESEAL"
-	os.Unsetenv(envName)
-	fmt.Print("before")
-	err = runAndAssert(th,"", true, true)
-	fmt.Println("after")
-	fmt.Println(err)
-	if err == nil {
-		t.Error(errors.Errorf("Should have failed to find kubeseal but didn't"))
-	}
-
-	os.Setenv(envName, "1")
-	defer os.Unsetenv(envName)
-	err = runAndAssert(th, "", true, true)
 	if err != nil {
 		t.Error(err)
 	}
@@ -79,15 +39,6 @@ func TestSecretSealer_WithTarget(t *testing.T) {
 		t.Error(err)
 	}
 
-	_, err = copyFile("../kubeseal_bin", path.Join(tmp, "kubeseal"))
-	if err != nil {
-		t.Error(err)
-	}
-
-	origPath := os.Getenv("PATH")
-	os.Setenv("PATH", tmp)
-	defer os.Setenv("PATH", origPath)
-
 	var target = "namespace: foo"
 	err = runAndAssert(th,target, false, true)
 	target = "namespace: default"
@@ -99,7 +50,6 @@ func TestSecretSealer_WithTarget(t *testing.T) {
 }
 
 func runAndAssert(th *kusttest_test.HarnessEnhanced, options string, shouldReplace bool, shouldPass bool) error {
-	fmt.Println("a")
 	certPath, err := writeCert()
 	if err != nil {
 		return err
@@ -148,16 +98,11 @@ status: {}`
 		return err
 	}
 
-	// Kubeseal seems to use a different nonce every time so the encrypted lines will never actually match
-	cleanYaml, removedLines := removeLines(string(bYaml), []string{"bar:", "foo:"})
-	cleanExpected, expectedRemovedLines := removeLines(expected, []string{"bar:", "foo:"})
-
-	if cleanYaml != cleanExpected {
-		return errors.Errorf("Expected:\n%sGot:\n%s\n", cleanExpected, cleanYaml)
+	yaml := string(bYaml)
+	if yaml != expected {
+		return errors.Errorf("\r\nExpected:\n%s\n\n\n\rGot:\n%s\n", expected, yaml)
 	}
-	if removedLines != 2 || expectedRemovedLines != 2 {
-		return errors.Errorf("Expected %d keys, found %d", expectedRemovedLines, removedLines)
-	}
+	
 	return nil
 }
 
