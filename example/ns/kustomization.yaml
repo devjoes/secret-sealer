@@ -1,9 +1,6 @@
-bases:
-- ns
 resources:
 - secret.yaml
-transformers:
-- secretsealer.yaml
+namespace: ns
 secretGenerator:
 - name: example-secret
   literals:
@@ -21,10 +18,12 @@ generatorOptions:
     note: generated
 configMapGenerator:
 - name: also-not-a-secret
+  namespace: ns
   literals:
   - BAR=Foo
 secretGenerator:
 - name: example-secret-2
+  namespace: ns
   literals:
   - example1=foo
   - example2=bar

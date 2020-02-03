@@ -2,17 +2,16 @@ package main_test
 
 import (
 	"fmt"
+	"github.com/pkg/errors"
 	"io"
 	"io/ioutil"
 	"os"
+	kusttest_test "sigs.k8s.io/kustomize/api/testutils/kusttest"
 	"strings"
 	"testing"
-
-	"github.com/pkg/errors"
-	kusttest_test "sigs.k8s.io/kustomize/api/testutils/kusttest"
 )
 
-func TestSecretSealer(t *testing.T) {
+func TestSecretSealer_RequiresCert(t *testing.T) {
 	th := kusttest_test.MakeEnhancedHarness(t).
 		BuildGoPlugin("devjoes", "v1", "SecretSealer")
 	defer th.Reset()
@@ -21,8 +20,38 @@ func TestSecretSealer(t *testing.T) {
 	if err != nil {
 		t.Error(err)
 	}
+	_, err = th.RunTransformer(
+		`apiVersion: devjoes/v1
+kind: SecretSealer
+metadata:
+  name: notImportantHere
+`, secretSealerYaml)
+	if err == nil || err.Error() != "Cert option is required" {
+		println(err)
+		t.Error("Doesn't error on missing cert option")
+	}
 
-	err = runAndAssert(th, "", true, true)
+	_, err = th.RunTransformer(
+		`apiVersion: devjoes/v1
+kind: SecretSealer
+metadata:
+  name: notImportantHere
+  cert: /idontexist
+`, secretSealerYaml)
+	if err == nil {
+		t.Error("Doesn't error if cert doesn't exist")
+	}
+	
+
+}
+
+func TestSecretSealer(t *testing.T) {
+	os.Setenv("SESSION_KEY_SEED", "RlTttySb585amdle9tN3cz0XD2qChRmcbefSgwqudOYuhgKMfOjQDIKWovmNQkm")
+	th := kusttest_test.MakeEnhancedHarness(t).
+		BuildGoPlugin("devjoes", "v1", "SecretSealer")
+	defer th.Reset()
+
+	err := runAndAssert(th, "", true, true)
 
 	if err != nil {
 		t.Error(err)
@@ -30,6 +59,7 @@ func TestSecretSealer(t *testing.T) {
 }
 
 func TestSecretSealer_WithTarget(t *testing.T) {
+	os.Setenv("SESSION_KEY_SEED", "RlTttySb585amdle9tN3cz0XD2qChRmcbefSgwqudOYuhgKMfOjQDIKWovmNQkm")
 	th := kusttest_test.MakeEnhancedHarness(t).
 		BuildGoPlugin("devjoes", "v1", "SecretSealer")
 	defer th.Reset()
@@ -40,10 +70,27 @@ func TestSecretSealer_WithTarget(t *testing.T) {
 	}
 
 	var target = "namespace: foo"
-	err = runAndAssert(th,target, false, true)
+	err = runAndAssert(th, target, false, true)
 	target = "namespace: default"
-	err = runAndAssert(th,target, true, true)
+	err = runAndAssert(th, target, true, true)
 
+	if err != nil {
+		t.Error(err)
+	}
+}
+
+func TestSecretSealer_WithoutSeed(t *testing.T) {
+	os.Unsetenv("SESSION_KEY_SEED")
+	th := kusttest_test.MakeEnhancedHarness(t).
+		BuildGoPlugin("devjoes", "v1", "SecretSealer")
+	defer th.Reset()
+	tmp, err := ioutil.TempDir("/tmp/", "secretsealer.")
+	defer os.RemoveAll(tmp)
+	if err != nil {
+		t.Error(err)
+	}
+
+	err = runAndAssert(th, "namespace: default", true, false)
 	if err != nil {
 		t.Error(err)
 	}
@@ -62,18 +109,10 @@ metadata:
   name: notImportantHere
 cert: %s
 %s
-`, certPath, options),`
-apiVersion: v1
-data:
-  foo: Zm9vCg==
-  bar: YmFyCg==
-kind: Secret
-metadata:
-  name: test
-  namespace: default
-`)
+`, certPath, options), secretSealerYaml)
 
-	expected := `apiVersion: bitnami.com/v1alpha1
+	yamlExpected :=
+		`apiVersion: bitnami.com/v1alpha1
 kind: SealedSecret
 metadata:
   creationTimestamp: null
@@ -81,14 +120,15 @@ metadata:
   namespace: default
 spec:
   encryptedData:
-    bar: AgATyp1FXeqclIbsGN9Efc1cfJ9PBh+vF/RvGs6m2cYTvXVtptHW3rqW9DLeR7tjUICFZoR+9LLUPzHQu9Fokyj53jh2trmCf3kS96ggDBPdPUaN1I+AwwNxQ3MnxNI4mHnOJ1ZRuLdA5OvU/sPYeWZZ6gY0eMBK+tZavq8Ks4uFAO4CtHzgh7NslSios68Q7FUnlue+XePyQY+wD2SNIx54vE+fbFFP0f5LdVB8ZG6F+SSWSKV+2SiXbuWW8hA9OJ2HjueqNEU4j3CIQYRKZxlNfCOWyPuf37F/7HexpiRbVMU+FLXVGoeNocYz6x5JjXSaLegLVRlnvhdcxqvr0540FtD+hvfJGHECASIEViOaz+57VH4gKoJ4CO6A0DOtinOLMjr0gwQtb1QtIZvXTauohQaiKDLAbCNyeagfdGtMjYdhPGPWHC1FCfmzmRpJBhYtwh5iVoBhHed4Zqbv6CzHpT9kxxllk86A3X9lPD3cGK3OtOey0F5Zaq7vZM702suxVYBQ/H5EhNJRaWWk5FXTIlqeS3S7xViI7wmj+cQ3yEG/IxFvLRJ9wybToS0sQ+qf1QM64uwO0bj9Y0CnqE6d0+jy+R+x6rLiKBHx6MsGAWcxAnes3Ryz+FI0pi5G7LoiYwwXIBSpwYMfqAXZaedrw1ruUsTO3djApCCXTDR7hmTrfYlePe5/NhVdmV28TI6Ffy4X
-    foo: AgCuaxi9qq8sMjUXrOBHGsSHd9RC4g0AlMLJhyons7KG1f2CVR5/gWZzX+1Rk0Gj9zmxqiiPndf5XFm5zkYx6bnSG5pTXczPvVKcDrU1NrE/Uhit0vw0uLLeQTVJ+JHKzJ7s0c3O5nsRIH3LndFA5c5sCds7UaBSeBoSkdiKytarzjnxraKMV0mWI9x2Eo8KUcVCeqRac7bZXiZvXJELDkS88rQEwkS29MOYv+cUxkAvpulTvsBI3aArrpu6KmGF+j8ZAAHvlywf6REmamuvlLigSSlv2aJL+vKTclzUGR/mXsRsq4q+cUM73cJRbkOJDvZ561XZ2zp6f80MPCGksTAK4JFCt3Z+Vz9HqGjafCWvKEEEptAOm5/lr5nQbJWBiX9lpw6sMU9JHOCw5mgzychAYl8vPoqT+1zWrd4tv4OnQLXSsOXu9nEzBFYJ/O/OFPj1j2oSToPFjALjlVc8XSoX7omGpepV/yAot86c4aZMtj+sBgnOR4vZAOStqzjGAA5ngYWUeT8sCFPGmh6hXPuMRgD9YnsH0+gXS6FPed2pnTnlOpIb+7Jebf0wRg4fBwMR0YrqgOESoGHHgVJ+ok9D++PbWQBP6UG8Dtd32tP46HQVLs19jwck0DXQm7yLIXUBbPDC+aj05J+v1wyRhVhiSCJFO8/gyosC6km0h9D3uug6jTGWqywi29fXRyBQAKUOT0lV
+	bar: AgAXEGhwpQVYBg7VpoEjHzFiw/gkSNdfwLhK1qAJ0pn9ir2Z/dJj98t8DnVdb6wCZo1t2DdGJqsQsGlmHqI6EbB2kAfVR3qhvP7EzQ2CvOmbnlQ+qErJ2Qz+lD3TzJS4UYkm8rZ5g86OduONEdkrcEjoI58OwvhFNTTQb8o7Bu4hAKJTNa0atJwh0fnSI22RpucWXLeyr+qeyjoqtHPu9O6Lr9NLIdqn1NIcVslHc9K7olpYF67ekBsmU2ZymoIZpKeF7CYyIG7y6v2NFb6Y8BSrwxcvG5kS91P5sj6XXeEZFrIvLB9Lz/usyql0jF/GFwZok9PpDp3xuV5vwPnMjHNqiFYGqk9AOdp0DGIHownLjjrOOU2DbWbeGzB+HV0jPBS83uziuuQO/FEqB/mbjdDSBEuJICAiV02TXU2uXsFKT+XiFgClXkvkEAqaOjCQRzTaRWdwz1tE+39fKUK/fOFNYIcUl3E354ExbvL4yp60K98Bblyya+KKXBDoTkI8Wu3R30DXmBtwllvBltCYi1e1CYDCd40lNpVMZBzkaJCgG1BkcoymbjyTtjjqiUPFoY2oMV9HoKoAQU0qDASmgsMSfJ5ssHLGP4/AJN+Mg3rNL8OmvyAZS0Ku9SdIJJ7pbSF4U2gn1mjARjx/iIcDq3SjCwme3ki9MP5lUTQh9IMSFWlJnDCqbsh40ZKsC0rsR5k9hCu4
+	foo: AgAXEGhwpQVYBg7VpoEjHzFiw/gkSNdfwLhK1qAJ0pn9ir2Z/dJj98t8DnVdb6wCZo1t2DdGJqsQsGlmHqI6EbB2kAfVR3qhvP7EzQ2CvOmbnlQ+qErJ2Qz+lD3TzJS4UYkm8rZ5g86OduONEdkrcEjoI58OwvhFNTTQb8o7Bu4hAKJTNa0atJwh0fnSI22RpucWXLeyr+qeyjoqtHPu9O6Lr9NLIdqn1NIcVslHc9K7olpYF67ekBsmU2ZymoIZpKeF7CYyIG7y6v2NFb6Y8BSrwxcvG5kS91P5sj6XXeEZFrIvLB9Lz/usyql0jF/GFwZok9PpDp3xuV5vwPnMjHNqiFYGqk9AOdp0DGIHownLjjrOOU2DbWbeGzB+HV0jPBS83uziuuQO/FEqB/mbjdDSBEuJICAiV02TXU2uXsFKT+XiFgClXkvkEAqaOjCQRzTaRWdwz1tE+39fKUK/fOFNYIcUl3E354ExbvL4yp60K98Bblyya+KKXBDoTkI8Wu3R30DXmBtwllvBltCYi1e1CYDCd40lNpVMZBzkaJCgG1BkcoymbjyTtjjqiUPFoY2oMV9HoKoAQU0qDASmgsMSfJ5ssHLGP4/AJN+Mg3rNL8OmvyAZS0Ku9SdIJJ7pbSF4U2gn1mjARjx/iIcDq3SjCwme3ki9MP5lUTQh9IMSFW1HgTCHSiecxbIQdUNRzd41riSk
   template:
-    metadata:
-      creationTimestamp: null
-      name: test
-      namespace: default
-status: {}`
+	metadata:
+	  creationTimestamp: null
+	  name: test
+	  namespace: default
+status: {}
+`
 
 	if err != nil {
 		return err
@@ -97,12 +137,17 @@ status: {}`
 	if err != nil {
 		return err
 	}
+	yamlResult := strings.ReplaceAll(strings.ReplaceAll(string(bYaml), "\t", ""), " ", "")
+	yamlExpected = strings.ReplaceAll(strings.ReplaceAll(string(yamlExpected), "\t", ""), " ", "")
+	a, _ := os.Create("/tmp/a")
+	a.WriteString(yamlResult)
+	b, _ := os.Create("/tmp/b")
+	b.WriteString(yamlExpected)
 
-	yaml := string(bYaml)
-	if yaml != expected {
-		return errors.Errorf("\r\nExpected:\n%s\n\n\n\rGot:\n%s\n", expected, yaml)
+	if yamlResult != yamlExpected && shouldPass {
+		return errors.Errorf("\r\nExpected:\n%s\n\n\n\rGot:\n%s\n", yamlExpected, yamlResult)
 	}
-	
+
 	return nil
 }
 
@@ -196,4 +241,15 @@ CgS5nJsv/BPrkYSMSGQ9HrVHy7qST5oIoaiCsWRgT4cAdWynoMGp/Hwzs+B/zTV/
 n5sJflx9u43DD0h+rYRXRE8qYzOGHu/HIJgWKnacAMwHOW70/mJIEs6MMP0T347J
 3GM=
 -----END CERTIFICATE-----
+`
+
+const secretSealerYaml = `
+apiVersion: v1
+data:
+  foo: Zm9vCg==
+  bar: YmFyCg==
+kind: Secret
+metadata:
+  name: test
+  namespace: default
 `

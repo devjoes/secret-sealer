@@ -1,22 +1,22 @@
 package main
 
 import (
-	"crypto/rsa"
 	"bytes"
+	"crypto/rsa"
 	"encoding/json"
 	"fmt"
+	"github.com/devjoes/sealed-secrets/pkg/apis/sealed-secrets/v1alpha1"
+	"github.com/pkg/errors"
 	"io"
 	"io/ioutil"
+	v1 "k8s.io/api/core/v1"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/runtime"
+	"k8s.io/client-go/kubernetes/scheme"
+	"k8s.io/client-go/util/cert"
 	"net/http"
 	"net/url"
 	"os"
-	"k8s.io/client-go/kubernetes/scheme"
-	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-	"github.com/devjoes/sealed-secrets/pkg/apis/sealed-secrets/v1alpha1"
-	"github.com/pkg/errors"
-	v1 "k8s.io/api/core/v1"
-	"k8s.io/apimachinery/pkg/runtime"
-	"k8s.io/client-go/util/cert"
 	"sigs.k8s.io/kustomize/api/resid"
 	"sigs.k8s.io/kustomize/api/resmap"
 	"sigs.k8s.io/kustomize/api/resource"
@@ -46,11 +46,21 @@ func (p *plugin) Config(ph *resmap.PluginHelpers, c []byte) (err error) {
 	if err != nil {
 		return err
 	}
-	fmt.Print(string(c))
 	return err
 }
 
+func (p *plugin) checkOptions() error {
+	if p.Cert == "" {
+		return errors.New("Cert option is required")
+	}
+	return nil
+}
+
 func (p *plugin) Transform(rm resmap.ResMap) error {
+	err := p.checkOptions()
+	if err != nil {
+		return err
+	}
 	secrets, err := p.extractAndRemoveSecrets(rm, p.Target)
 	if err != nil {
 		return err
@@ -64,7 +74,7 @@ func (p *plugin) Transform(rm resmap.ResMap) error {
 		if res.GetKind() == "Secret" {
 			sSecret, err := p.sealSecret(&res)
 			if err != nil {
-				return errors.Wrapf(err, "An error occured whilst processing %s", res.OrgId())
+				return err
 			}
 			rm.Append(&sSecret)
 		}
@@ -82,7 +92,6 @@ func (p *plugin) sealSecret(secret *resource.Resource) (resource.Resource, error
 	sealedYaml, err := p.callKubeSealApi(&k8sSecret)
 
 	if err != nil {
-		fmt.Println(err)
 		return resource.Resource{}, errors.Wrap(err, "Error calling kubeseal")
 	}
 	sSecret, err := p.pluginHelper.ResmapFactory().NewResMapFromBytes(sealedYaml)
@@ -104,62 +113,52 @@ func prepSecretForSealing(secret *resource.Resource) (v1.Secret, error) {
 	if err != nil {
 		return v1Secret, err
 	}
-	
+
 	reader := bytes.NewReader(secretJson)
 	if err := json.NewDecoder(reader).Decode(&v1Secret); err != nil {
 		return v1Secret, err
 	}
-		// Strip read-only server-side ObjectMeta (if present)
-		v1Secret.SetSelfLink("")
-		v1Secret.SetUID("")
-		v1Secret.SetResourceVersion("")
-		v1Secret.Generation = 0
-		v1Secret.SetCreationTimestamp(metav1.Time{})
-		v1Secret.SetDeletionTimestamp(nil)
-		v1Secret.DeletionGracePeriodSeconds = nil
+	// Strip read-only server-side ObjectMeta (if present)
+	v1Secret.SetSelfLink("")
+	v1Secret.SetUID("")
+	v1Secret.SetResourceVersion("")
+	v1Secret.Generation = 0
+	v1Secret.SetCreationTimestamp(metav1.Time{})
+	v1Secret.SetDeletionTimestamp(nil)
+	v1Secret.DeletionGracePeriodSeconds = nil
 
 	return v1Secret, err
 }
 
 func (p *plugin) callKubeSealApi(secret *v1.Secret) ([]byte, error) {
 	info, ok := runtime.SerializerInfoForMediaType(scheme.Codecs.SupportedMediaTypes(), runtime.ContentTypeYAML)
-	encoder:= scheme.Codecs.EncoderForVersion(info.Serializer, v1alpha1.SchemeGroupVersion)
-	if (!ok){
+	encoder := scheme.Codecs.EncoderForVersion(info.Serializer, v1alpha1.SchemeGroupVersion)
+	if !ok {
 		return nil, errors.New("SerializerInfoForMediaType Failed")
 	}
-	
+
 	cert, err := openCertLocal(p.Cert)
 	if err != nil {
-		return nil, err
-	}
-	
-	key, err := parseKey(cert)
-	if err != nil {
-		return nil, err
+		return nil, errors.Wrapf(err, "Error opening cert %s", p.Cert)
 	}
 
-	sessionKeySeed := getSessionKeySeed()
-	
-	sealedSecret, err := v1alpha1.NewSealedSecret(scheme.Codecs, key, secret, sessionKeySeed) 
+	key, err := parseKey(cert)
 	if err != nil {
-		return nil, err
+		return nil, errors.Wrapf(err, "Error extracting key from cert %s", p.Cert)
+	}
+
+	sessionKeySeed := os.Getenv("SESSION_KEY_SEED")
+
+	sealedSecret, err := v1alpha1.NewSealedSecret(scheme.Codecs, key, secret, sessionKeySeed)
+	if err != nil {
+		return nil, errors.Wrapf(err, "Error sealing secret %s in %s", secret.Name, secret.Namespace)
 	}
 	buf, err := runtime.Encode(encoder, sealedSecret)
 	if err != nil {
 		return nil, err
 	}
+	
 	return buf, nil
-}
-
-func getSessionKeySeed() string {
-	seed := os.Getenv("SESSION_KEY_SEED")
-	if seed == "" || len(seed) < 32 {
-		fmt.Println("The environment variable SESSION_KEY_SEED has not been set. Or it has been set and is under 32 characters long.")
-		fmt.Println("If this seed changes then the encrypted secrets generated will also change.")
-		fmt.Println("This should not result in any data loss but it will mean that if you have frequent builds that auto deploy when a change occurs then you will be continously deploying.")
-		fmt.Println("PLEASE NOTE: Setting this will force the algorithm to be deterministic, this could potentially make it slightly less secure.")
-	}
-	return seed
 }
 
 func (p *plugin) extractAndRemoveSecrets(rm resmap.ResMap, selector types.Selector) ([]resource.Resource, error) {
@@ -172,7 +171,7 @@ func (p *plugin) extractAndRemoveSecrets(rm resmap.ResMap, selector types.Select
 	for _, res := range found {
 		if res.GetKind() == "Secret" {
 			result = append(result, *res)
-			err := rm.Remove(res.OrgId())
+			err := rm.Remove(res.CurId())
 			if err != nil {
 				return nil, err
 			}
@@ -241,4 +240,8 @@ func openCertLocal(filenameOrURI string) (io.ReadCloser, error) {
 		return os.Open(filenameOrURI)
 	}
 	return openCertURI(filenameOrURI)
+}
+
+func main() {
+	// This is just to keep go get happy
 }

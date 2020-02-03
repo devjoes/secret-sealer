@@ -1,0 +1,4 @@
+apiVersion: v1
+type: Namespace
+metadata:
+  name: ns
