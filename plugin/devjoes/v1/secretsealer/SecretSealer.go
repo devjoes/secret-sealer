@@ -31,6 +31,8 @@ type plugin struct {
 	//TODO: Add args for other kubeseal options
 }
 
+
+//KustomizePlugin not used - but apparently required
 var KustomizePlugin plugin
 
 func (p *plugin) Config(ph *resmap.PluginHelpers, c []byte) (err error) {
@@ -66,10 +68,6 @@ func (p *plugin) Transform(rm resmap.ResMap) error {
 		return err
 	}
 
-	if err != nil {
-		return err
-	}
-
 	for _, res := range secrets {
 		if res.GetKind() == "Secret" {
 			sSecret, err := p.sealSecret(&res)
@@ -89,7 +87,7 @@ func (p *plugin) sealSecret(secret *resource.Resource) (resource.Resource, error
 		return resource.Resource{}, err
 		//return resource.Resource{}, errors.Wrap(err, "Error converting kustomize Secret in to native k8s Secret")
 	}
-	sealedYaml, err := p.callKubeSealApi(&k8sSecret)
+	sealedYaml, err := p.callKubeSealAPI(&k8sSecret)
 
 	if err != nil {
 		return resource.Resource{}, errors.Wrap(err, "Error calling kubeseal")
@@ -109,12 +107,12 @@ func prepSecretForSealing(secret *resource.Resource) (v1.Secret, error) {
 	if secret.GetNamespace() == "" {
 		secret.SetNamespace("default")
 	}
-	secretJson, err := secret.MarshalJSON()
+	secretJSON, err := secret.MarshalJSON()
 	if err != nil {
 		return v1Secret, err
 	}
 
-	reader := bytes.NewReader(secretJson)
+	reader := bytes.NewReader(secretJSON)
 	if err := json.NewDecoder(reader).Decode(&v1Secret); err != nil {
 		return v1Secret, err
 	}
@@ -130,7 +128,7 @@ func prepSecretForSealing(secret *resource.Resource) (v1.Secret, error) {
 	return v1Secret, err
 }
 
-func (p *plugin) callKubeSealApi(secret *v1.Secret) ([]byte, error) {
+func (p *plugin) callKubeSealAPI(secret *v1.Secret) ([]byte, error) {
 	info, ok := runtime.SerializerInfoForMediaType(scheme.Codecs.SupportedMediaTypes(), runtime.ContentTypeYAML)
 	encoder := scheme.Codecs.EncoderForVersion(info.Serializer, v1alpha1.SchemeGroupVersion)
 	if !ok {

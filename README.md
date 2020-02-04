@@ -1,6 +1,6 @@
 # Secret sealer
 
-This plugin finds secrets and runs [Bitnami's Sealed Secrets](https://github.com/bitnami-labs/sealed-secrets) on them.
+This Kustomize plugin finds secrets and runs [Bitnami's Sealed Secrets](https://github.com/bitnami-labs/sealed-secrets) on them.
 
 You can then declare the plugin like this:
 
@@ -10,7 +10,7 @@ You can then declare the plugin like this:
        name: SecretSealer
      cert: http://example.com/my/public/key.pub
 
-This will seal all available secrets. You can also add a selector such as "namespace:" to restrict which secrets get sealed. One thing to remember is that Sealed Secret's controller will auto rotate it's key every 30 days (customizable). So the cert property should point to a live copy of the key which you can expose using an ingress. Whilst this is just a public key if you want you can protect it with basic authentication and use a URL like user@password/my/public/key.pub. (Remmber this will get checked in to source control though.)
+This will seal all available secrets. You can also add a selector such as "namespace:" to restrict which secrets get sealed. One thing to remember is that Sealed Secret's controller will auto rotate it's key every 30 days (customizable). So the cert property should point to a live copy of the key which you can expose using an ingress. Whilst this is just a public key if you want you can protect it with basic authentication and use a URL like user@password/my/public/key.pub. (Remember this will get checked in to source control though.)
 
 ## Session key seed
 
