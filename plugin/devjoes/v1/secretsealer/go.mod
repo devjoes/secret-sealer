@@ -1,4 +1,4 @@
-module github.com/devjoes/secret-sealer
+module github.com/devjoes/secret-sealer/plugin/devjoes/v1/secretsealer/
 
 go 1.12
 
