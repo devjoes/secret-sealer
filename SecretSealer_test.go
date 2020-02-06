@@ -139,10 +139,6 @@ status: {}
 	}
 	yamlResult := strings.ReplaceAll(strings.ReplaceAll(string(bYaml), "\t", ""), " ", "")
 	yamlExpected = strings.ReplaceAll(strings.ReplaceAll(string(yamlExpected), "\t", ""), " ", "")
-	a, _ := os.Create("/tmp/a")
-	a.WriteString(yamlResult)
-	b, _ := os.Create("/tmp/b")
-	b.WriteString(yamlExpected)
 
 	if yamlResult != yamlExpected && shouldPass {
 		return errors.Errorf("\r\nExpected:\n%s\n\n\n\rGot:\n%s\n", yamlExpected, yamlResult)

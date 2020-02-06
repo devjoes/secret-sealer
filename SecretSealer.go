@@ -28,7 +28,6 @@ type plugin struct {
 	pluginHelper *resmap.PluginHelpers
 	Target       types.Selector `json:"target,omitempty" yaml:"target,omitempty"`
 	Cert         string         `json:"cert,omitempty" yaml:"cert,omitempty"`
-	//TODO: Add args for other kubeseal options
 }
 
 

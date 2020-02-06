@@ -15,3 +15,12 @@ This will seal all available secrets. You can also add a selector such as "names
 ## Session key seed
 
 Sealed Secrets uses a random session key each time it encrypts something (as you should). However if you are using something like [Flux](https://www.weave.works/oss/flux/) then this means that every time you run kustomize you will trigger a new deployment. So I have forked Sealed Secrets [here](https://github.com/devjoes/sealed-secrets/) and hobbled the encryption ever so slightly by basing the session key on a hash of the input and a seed that is provided in an environment variable. **This makes the encryption deterministic.** If you set SESSION_KEY_SEED to a 16 character password then it will enable this feature. If it is not set then this feature will be disabled.
+
+## Installation
+
+This has been tested with Kustomize 3.5.4 (see docker file)
+
+    go get -d github.com/devjoes/secret-sealer/
+    mkdir -p ~/.config/kustomize/plugin/devjoes/v1/secretsealer/
+    go build -buildmode plugin -o ~/.config/kustomize/plugin/devjoes/v1/secretsealer/SecretSealer.so ./SecretSealer.go
+
