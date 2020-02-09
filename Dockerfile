@@ -25,7 +25,7 @@ RUN ["/bin/bash", "test.sh" ]
 
 FROM alpine AS final
 
-COPY --from=build /root/.config /~/.config
+COPY --from=build /root/.config /root/.config
 COPY --from=build /go/bin/kustomize /bin/kustomize
 
 ENTRYPOINT ["kustomize"]

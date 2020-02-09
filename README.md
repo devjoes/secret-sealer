@@ -24,4 +24,8 @@ This has been tested with Kustomize 3.5.4 (see docker file)
     mkdir -p ~/.config/kustomize/plugin/devjoes/v1/secretsealer/
     go build -buildmode plugin -o ~/.config/kustomize/plugin/devjoes/v1/secretsealer/SecretSealer.so ./SecretSealer.go
 
-There is a Docker image [here](https://hub.docker.com/r/joeshearn/secret-sealer). You can either run this as it is, use it as a base image or copy the relevant files out of it using COPY --from=joeshearn/secret-sealer .
+There is a Docker image [here](https://hub.docker.com/r/joeshearn/secret-sealer). You can either run this as it is, use it as a base image or copy the relevant files out of it like this:
+
+    FROM alpine:latest
+    COPY --from=joeshearn/secret-sealer /bin/kustomize /bin/kustomize
+    COPY --from=joeshearn/secret-sealer /root/.config/kustomize/plugin/devjoes/v1/secretsealer/SecretSealer.so /root/.config/kustomize/plugin/devjoes/v1/secretsealer/SecretSealer.so
