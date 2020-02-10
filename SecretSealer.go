@@ -3,20 +3,22 @@ package main
 import (
 	"bytes"
 	"crypto/rsa"
+	"encoding/base64"
 	"encoding/json"
 	"fmt"
-	"github.com/devjoes/sealed-secrets/pkg/apis/sealed-secrets/v1alpha1"
-	"github.com/pkg/errors"
 	"io"
 	"io/ioutil"
+	"net/http"
+	"net/url"
+	"os"
+
+	"github.com/devjoes/sealed-secrets/pkg/apis/sealed-secrets/v1alpha1"
+	"github.com/pkg/errors"
 	v1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/client-go/kubernetes/scheme"
 	"k8s.io/client-go/util/cert"
-	"net/http"
-	"net/url"
-	"os"
 	"sigs.k8s.io/kustomize/api/resid"
 	"sigs.k8s.io/kustomize/api/resmap"
 	"sigs.k8s.io/kustomize/api/resource"
@@ -204,14 +206,14 @@ func parseKey(r io.Reader) (*rsa.PublicKey, error) {
 
 func openCertURI(uri string) (io.ReadCloser, error) {
 	// From main.go in github.com/bitnami-labs/sealed-secrets
-
+	fmt.Printf("Downloading cert %s\n", uri)
 	t := &http.Transport{}
 	t.RegisterProtocol("file", http.NewFileTransport(http.Dir("/")))
 	c := &http.Client{Transport: t}
 
 	resp, err := c.Get(uri)
 	if err != nil {
-		return nil, err
+		return nil, errors.Wrapf(err, "cannot fetch %s", uri)
 	}
 	if resp.StatusCode != http.StatusOK {
 		return nil, fmt.Errorf("cannot fetch %q: %s", uri, resp.Status)
