@@ -3,7 +3,6 @@ package main
 import (
 	"bytes"
 	"crypto/rsa"
-	"encoding/base64"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -30,6 +29,7 @@ type plugin struct {
 	pluginHelper *resmap.PluginHelpers
 	Target       types.Selector `json:"target,omitempty" yaml:"target,omitempty"`
 	Cert         string         `json:"cert,omitempty" yaml:"cert,omitempty"`
+	Verbose         bool         `json:"verbose,omitempty" yaml:"verbose,omitempty"`
 }
 
 
@@ -37,6 +37,7 @@ type plugin struct {
 var KustomizePlugin plugin
 
 func (p *plugin) Config(ph *resmap.PluginHelpers, c []byte) (err error) {
+	p.debug("config start")
 	p.Target = types.Selector{
 		Name: "",
 		Gvk: resid.Gvk{
@@ -46,9 +47,12 @@ func (p *plugin) Config(ph *resmap.PluginHelpers, c []byte) (err error) {
 	p.Cert = ""
 	p.pluginHelper = ph
 	err = yaml.Unmarshal(c, p)
+	
 	if err != nil {
+		p.debug("config error")
 		return err
 	}
+	p.debug("config end")
 	return err
 }
 
@@ -60,12 +64,14 @@ func (p *plugin) checkOptions() error {
 }
 
 func (p *plugin) Transform(rm resmap.ResMap) error {
+	p.debug("transform start")
 	err := p.checkOptions()
 	if err != nil {
 		return err
 	}
 	secrets, err := p.extractAndRemoveSecrets(rm, p.Target)
 	if err != nil {
+		p.debug("transform error")
 		return err
 	}
 
@@ -73,16 +79,19 @@ func (p *plugin) Transform(rm resmap.ResMap) error {
 		if res.GetKind() == "Secret" {
 			sSecret, err := p.sealSecret(&res)
 			if err != nil {
+				p.debug("transform error")
 				return err
 			}
+			p.debug("Appending secret %v", sSecret)
 			rm.Append(&sSecret)
 		}
 	}
-
+	p.debug("transform end")
 	return nil
 }
 
 func (p *plugin) sealSecret(secret *resource.Resource) (resource.Resource, error) {
+	p.debug("sealSecret start %v", secret.GetGvk())
 	k8sSecret, err := prepSecretForSealing(secret)
 	if err != nil {
 		return resource.Resource{}, err
@@ -100,6 +109,7 @@ func (p *plugin) sealSecret(secret *resource.Resource) (resource.Resource, error
 	if sSecret.Size() != 1 {
 		return resource.Resource{}, errors.New(fmt.Sprintf("Expected a single SealedSecret but received %d", sSecret.Size()))
 	}
+	p.debug("sealSecret end")
 	return *sSecret.GetByIndex(0), nil
 }
 
@@ -130,13 +140,17 @@ func prepSecretForSealing(secret *resource.Resource) (v1.Secret, error) {
 }
 
 func (p *plugin) callKubeSealAPI(secret *v1.Secret) ([]byte, error) {
+	p.debug("callKubeSealAPI start")
 	info, ok := runtime.SerializerInfoForMediaType(scheme.Codecs.SupportedMediaTypes(), runtime.ContentTypeYAML)
 	encoder := scheme.Codecs.EncoderForVersion(info.Serializer, v1alpha1.SchemeGroupVersion)
 	if !ok {
 		return nil, errors.New("SerializerInfoForMediaType Failed")
 	}
 
+	p.debug("getting cert")
 	cert, err := openCertLocal(p.Cert)
+	defer cert.Close()
+	p.debug("got cert")
 	if err != nil {
 		return nil, errors.Wrapf(err, "Error opening cert %s", p.Cert)
 	}
@@ -157,10 +171,12 @@ func (p *plugin) callKubeSealAPI(secret *v1.Secret) ([]byte, error) {
 		return nil, err
 	}
 	
+	p.debug("callKubeSealAPI end")
 	return buf, nil
 }
 
 func (p *plugin) extractAndRemoveSecrets(rm resmap.ResMap, selector types.Selector) ([]resource.Resource, error) {
+	p.debug("extractAndRemoveSecrets start")
 	found, err := rm.Select(selector)
 	if err != nil {
 		return nil, err
@@ -170,12 +186,14 @@ func (p *plugin) extractAndRemoveSecrets(rm resmap.ResMap, selector types.Select
 	for _, res := range found {
 		if res.GetKind() == "Secret" {
 			result = append(result, *res)
+			p.debug("Removing %s", res.CurId())
 			err := rm.Remove(res.CurId())
 			if err != nil {
 				return nil, err
 			}
 		}
 	}
+	p.debug("extractAndRemoveSecrets end")
 	return result, nil
 }
 
@@ -206,7 +224,6 @@ func parseKey(r io.Reader) (*rsa.PublicKey, error) {
 
 func openCertURI(uri string) (io.ReadCloser, error) {
 	// From main.go in github.com/bitnami-labs/sealed-secrets
-	fmt.Printf("Downloading cert %s\n", uri)
 	t := &http.Transport{}
 	t.RegisterProtocol("file", http.NewFileTransport(http.Dir("/")))
 	c := &http.Client{Transport: t}
@@ -241,6 +258,8 @@ func openCertLocal(filenameOrURI string) (io.ReadCloser, error) {
 	return openCertURI(filenameOrURI)
 }
 
-func main() {
-	// This is just to keep go get happy
+func (p *plugin) debug(format string, a ...interface{}) {
+	if (p.Verbose) {
+		fmt.Printf("Secret Sealer - "+ format + "\n", a)
+	}
 }
