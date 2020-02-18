@@ -1,7 +1,5 @@
 #!/bin/bash
 
-grep -ri "Session key seed" "$GOPATH/pkg/mod/github.com/devjoes"
-
 ok=0
 kustomize build . --enable_alpha_plugins && ok=1 && echo "Deployed" | tee /tmp/log
 
