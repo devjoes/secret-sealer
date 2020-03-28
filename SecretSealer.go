@@ -26,12 +26,12 @@ import (
 )
 
 type plugin struct {
-	pluginHelper *resmap.PluginHelpers
-	Target       types.Selector `json:"target,omitempty" yaml:"target,omitempty"`
-	Cert         string         `json:"cert,omitempty" yaml:"cert,omitempty"`
-	Verbose         bool         `json:"verbose,omitempty" yaml:"verbose,omitempty"`
+	pluginHelper          *resmap.PluginHelpers
+	Target                types.Selector `json:"target,omitempty" yaml:"target,omitempty"`
+	Cert                  string         `json:"cert,omitempty" yaml:"cert,omitempty"`
+	Verbose               bool           `json:"verbose,omitempty" yaml:"verbose,omitempty"`
+	CopyLabelsAnnotations bool           `json:"copyLabelsAnnotations,omitempty" yaml:"copyLabelsAnnotations,omitempty"`
 }
-
 
 //KustomizePlugin not used - but apparently required
 var KustomizePlugin plugin
@@ -47,7 +47,7 @@ func (p *plugin) Config(ph *resmap.PluginHelpers, c []byte) (err error) {
 	p.Cert = ""
 	p.pluginHelper = ph
 	err = yaml.Unmarshal(c, p)
-	
+
 	if err != nil {
 		p.debug("config error")
 		return err
@@ -102,15 +102,37 @@ func (p *plugin) sealSecret(secret *resource.Resource) (resource.Resource, error
 	if err != nil {
 		return resource.Resource{}, errors.Wrap(err, "Error calling kubeseal")
 	}
-	sSecret, err := p.pluginHelper.ResmapFactory().NewResMapFromBytes(sealedYaml)
+	sSecretArray, err := p.pluginHelper.ResmapFactory().NewResMapFromBytes(sealedYaml)
 	if err != nil {
 		return resource.Resource{}, err
 	}
-	if sSecret.Size() != 1 {
-		return resource.Resource{}, errors.New(fmt.Sprintf("Expected a single SealedSecret but received %d", sSecret.Size()))
+	if sSecretArray.Size() != 1 {
+		return resource.Resource{}, errors.New(fmt.Sprintf("Expected a single SealedSecret but received %d", sSecretArray.Size()))
 	}
+	sSecret := sSecretArray.GetByIndex(0)
+	if p.CopyLabelsAnnotations {
+		sSecret.SetLabels(joinMaps(sSecret.GetLabels(), secret.GetLabels(), "type", "generated"))
+		sSecret.SetAnnotations(joinMaps(sSecret.GetAnnotations(), secret.GetAnnotations(), "note", "generated"))
+	}
+
 	p.debug("sealSecret end")
-	return *sSecret.GetByIndex(0), nil
+	return *sSecret, nil
+}
+
+func joinMaps(a map[string]string, b map[string]string, excludeKey string, excludeValue string) map[string]string {
+	result := make(map[string]string, len(a)+len(b))
+
+	for k, v := range a {
+		if k != excludeKey && v != excludeValue {
+			result[k] = v
+		}
+	}
+	for k, v := range b {
+		if k != excludeKey && v != excludeValue {
+			result[k] = v
+		}
+	}
+	return result
 }
 
 func prepSecretForSealing(secret *resource.Resource) (v1.Secret, error) {
@@ -170,7 +192,7 @@ func (p *plugin) callKubeSealAPI(secret *v1.Secret) ([]byte, error) {
 	if err != nil {
 		return nil, err
 	}
-	
+
 	p.debug("callKubeSealAPI end")
 	return buf, nil
 }
@@ -259,7 +281,7 @@ func openCertLocal(filenameOrURI string) (io.ReadCloser, error) {
 }
 
 func (p *plugin) debug(format string, a ...interface{}) {
-	if (p.Verbose) {
-		fmt.Printf("Secret Sealer - "+ format + "\n", a)
+	if p.Verbose {
+		fmt.Printf("Secret Sealer - "+format+"\n", a)
 	}
 }
