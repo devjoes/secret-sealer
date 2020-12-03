@@ -13,9 +13,9 @@ FROM deps AS build
 WORKDIR /src/
 COPY . .
 
-RUN mkdir -p /root/.config/kustomize/plugin/devjoes/v1/secretsealer/ \
-     && go build -buildmode plugin -o /root/.config/kustomize/plugin/devjoes/v1/secretsealer/SecretSealer.so ./SecretSealer.go \
-     && mkdir /root/sigs.k8s.io/kustomize/plugin -p
+RUN mkdir -p ~/.config/kustomize/plugin/devjoes/v1/secretsealer/ \
+     && go build -buildmode plugin -o ~/.config/kustomize/plugin/devjoes/v1/secretsealer/SecretSealer.so ./SecretSealer.go \
+     && mkdir ~/sigs.k8s.io/kustomize/plugin -p
 
 RUN go test
 
