@@ -14,4 +14,3 @@ require (
 
 replace github.com/Azure/go-autorest/autorest/mocks => github.com/Azure/go-autorest/autorest/mocks v0.2.0
 
-replace github.com/golang/protobuf => github.com/golang/protobuf v1.3.1
