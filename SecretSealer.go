@@ -288,6 +288,6 @@ func openCertLocal(filenameOrURIEnvs string) (io.ReadCloser, error) {
 
 func (p *plugin) debug(format string, a ...interface{}) {
 	if p.Verbose {
-		fmt.Printf("Secret Sealer - "+format+"\n", a)
+		fmt.Fprintf(os.Stderr, "Secret Sealer - "+format+"\n", a)
 	}
 }

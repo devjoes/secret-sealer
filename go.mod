@@ -13,3 +13,4 @@ require (
 )
 
 replace github.com/Azure/go-autorest/autorest/mocks => github.com/Azure/go-autorest/autorest/mocks v0.2.0
+
