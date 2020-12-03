@@ -65,8 +65,8 @@ func TestSecretSealerWithEnvVar(t *testing.T) {
 	defer th.Reset()
 
 	certPath, _ := writeCert()
-	os.Setenv("FOO", "/tmp")
-	certPath = "$FOO" + certPath[4:]
+	os.Setenv("FOO_BAR", "/tmp")
+	certPath = "$FOO_BAR" + certPath[4:]
 	err := runAndAssert(th, "", true, true, certPath)
 
 	if err != nil {
