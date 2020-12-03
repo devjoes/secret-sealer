@@ -2,13 +2,14 @@ package main_test
 
 import (
 	"fmt"
-	"github.com/pkg/errors"
 	"io"
 	"io/ioutil"
 	"os"
-	kusttest_test "sigs.k8s.io/kustomize/api/testutils/kusttest"
 	"strings"
 	"testing"
+
+	"github.com/pkg/errors"
+	kusttest_test "sigs.k8s.io/kustomize/api/testutils/kusttest"
 )
 
 func TestSecretSealer_RequiresCert(t *testing.T) {
@@ -41,7 +42,6 @@ metadata:
 	if err == nil {
 		t.Error("Doesn't error if cert doesn't exist")
 	}
-	
 
 }
 
@@ -51,7 +51,30 @@ func TestSecretSealer(t *testing.T) {
 		BuildGoPlugin("devjoes", "v1", "SecretSealer")
 	defer th.Reset()
 
-	err := runAndAssert(th, "", true, true)
+	err := runAndAssert(th, "", true, true, "")
+
+	if err != nil {
+		t.Error(err)
+	}
+}
+
+func TestSecretSealerWithEnvVar(t *testing.T) {
+	os.Setenv("SESSION_KEY_SEED", "RlTttySb585amdle9tN3cz0XD2qChRmcbefSgwqudOYuhgKMfOjQDIKWovmNQkm")
+	th := kusttest_test.MakeEnhancedHarness(t).
+		BuildGoPlugin("devjoes", "v1", "SecretSealer")
+	defer th.Reset()
+
+	certPath, _ := writeCert()
+	os.Setenv("FOO", "/tmp")
+	certPath = "$FOO" + certPath[4:]
+	err := runAndAssert(th, "", true, true, certPath)
+
+	if err != nil {
+		t.Error(err)
+	}
+	certPath, _ = writeCert()
+	certPath = "$IDONTEXIT" + certPath
+	err = runAndAssert(th, "", true, true, certPath)
 
 	if err != nil {
 		t.Error(err)
@@ -70,9 +93,9 @@ func TestSecretSealer_WithTarget(t *testing.T) {
 	}
 
 	var target = "namespace: foo"
-	err = runAndAssert(th, target, false, true)
+	err = runAndAssert(th, target, false, true, "")
 	target = "namespace: default"
-	err = runAndAssert(th, target, true, true)
+	err = runAndAssert(th, target, true, true, "")
 
 	if err != nil {
 		t.Error(err)
@@ -90,16 +113,19 @@ func TestSecretSealer_WithoutSeed(t *testing.T) {
 		t.Error(err)
 	}
 
-	err = runAndAssert(th, "namespace: default", true, false)
+	err = runAndAssert(th, "namespace: default", true, false, "")
 	if err != nil {
 		t.Error(err)
 	}
 }
 
-func runAndAssert(th *kusttest_test.HarnessEnhanced, options string, shouldReplace bool, shouldPass bool) error {
-	certPath, err := writeCert()
-	if err != nil {
-		return err
+func runAndAssert(th *kusttest_test.HarnessEnhanced, options string, shouldReplace bool, shouldPass bool, certPath string) error {
+	if certPath == "" {
+		var err error
+		certPath, err = writeCert()
+		if err != nil {
+			return err
+		}
 	}
 	defer os.Remove(certPath)
 	sealed, err := th.RunTransformer(

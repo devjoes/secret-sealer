@@ -10,6 +10,7 @@ import (
 	"net/http"
 	"net/url"
 	"os"
+	"regexp"
 
 	"github.com/devjoes/sealed-secrets/pkg/apis/sealed-secrets/v1alpha1"
 	"github.com/pkg/errors"
@@ -269,7 +270,12 @@ func isFilename(name string) (bool, error) {
 	return u.Scheme == "", nil
 }
 
-func openCertLocal(filenameOrURI string) (io.ReadCloser, error) {
+func openCertLocal(filenameOrURIEnvs string) (io.ReadCloser, error) {
+	rxEnvVar := regexp.MustCompile("\\$[A-Z0-9_]+")
+	filenameOrURI := string(rxEnvVar.ReplaceAllFunc([]byte(filenameOrURIEnvs), func(s []byte) []byte {
+		name := string(s)[1:]
+		return []byte(os.Getenv(name))
+	}))
 	// From main.go in github.com/bitnami-labs/sealed-secrets
 	// detect if a certificate is a local file or an URI.
 	if ok, err := isFilename(filenameOrURI); err != nil {
